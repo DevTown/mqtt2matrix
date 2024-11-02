@@ -6,7 +6,7 @@ It make use of the Matrix.SKD (https://github.com/baking-bad/matrix-dotnet-sdk) 
 
 You can send messages to 4 MQTT-Subchannels:
 
-- roomtopic
+- MQTTBASETOPIC/roomtopic
   - Change the topic of the MATRIX-room
   -  Bsp:
   ```json
@@ -15,7 +15,7 @@ You can send messages to 4 MQTT-Subchannels:
   "topic": "new Topic ;-)"
     }
   ```
-- roomname
+- MQTTBASETOPIC/roomname
   - Sets the name of the room
   - Bsp:
   ```json
@@ -25,7 +25,7 @@ You can send messages to 4 MQTT-Subchannels:
     }
   ```
 
-- roomavatar
+- MQTTBASETOPIC/roomavatar
   - Sets the image of the room
   - Image has to be uploaded to the MATRIX-Server first.
   - URL must be a MATRIX-URL for example ("mxc://matrix.c3re.de/XXXXXXXXXXXXXX")
@@ -37,7 +37,7 @@ You can send messages to 4 MQTT-Subchannels:
     }
   ``` 
     
-- roommessage
+- MQTTBASETOPIC/roommessage
   - Sends a message in the room
   - Bsp:
   ```json
