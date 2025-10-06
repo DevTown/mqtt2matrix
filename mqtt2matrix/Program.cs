@@ -32,7 +32,7 @@ var roomid2 = "!hhLRgoyFSLKlgPhgHF:matrix.c3re.de"; //Jarvis Test Room
 
 static Boolean checkHostName(string roomname, string hostname)
 {
-    var check = roomname.Contains(hostname);
+    var check = true; //roomname.Contains(hostname);
     if (check)
     {
         Console.WriteLine("Roomname: " + roomname + " contains hostname: " + hostname);
@@ -108,6 +108,7 @@ MqttClientOptions options;
                 var topic = JsonConvert.DeserializeObject<Topic>(e.ApplicationMessage.ConvertPayloadToString());
                 if (topic != null && checkHostName(topic.roomid, matrixHostname))
                 {
+                    
                     await client.JoinTrustedPrivateRoomAsync(topic.roomid);
                     var t = await client.SetRoomTopicAsync(topic.roomid, topic.topic);
                     Console.WriteLine("Change Topic for room " + topic.roomid + " to " + topic.topic);
