@@ -30,20 +30,6 @@ var closeUrl = "mxc://matrix.c3re.de/YjVhJIHNrbEXmZmwAgplvNCs";
 var openUrl = "mxc://matrix.c3re.de/IJHumgqYFRjmRLqRfBnYgLaJ";
 var roomid2 = "!hhLRgoyFSLKlgPhgHF:matrix.c3re.de"; //Jarvis Test Room
 
-static Boolean checkHostName(string roomname, string hostname)
-{
-    var check = true; //roomname.Contains(hostname);
-    if (check)
-    {
-        Console.WriteLine("Roomname: " + roomname + " contains hostname: " + hostname);
-    }
-    else
-    {
-        Console.WriteLine("Roomname: " + roomname + " does not contain hostname: " + hostname);
-    }
-    return check;
-}
-
 
 var mqttFactory = new MqttFactory();
 
@@ -106,7 +92,7 @@ MqttClientOptions options;
             if (e.ApplicationMessage.Topic == mqttTopicRoomTopic)
             {
                 var topic = JsonConvert.DeserializeObject<Topic>(e.ApplicationMessage.ConvertPayloadToString());
-                if (topic != null && checkHostName(topic.roomid, matrixHostname))
+                if (topic != null)
                 {
                     
                     await client.JoinTrustedPrivateRoomAsync(topic.roomid);
@@ -119,7 +105,7 @@ MqttClientOptions options;
             else if (e.ApplicationMessage.Topic == mqttTopicRoomName)
             {
                 var name = JsonConvert.DeserializeObject<Name>(e.ApplicationMessage.ConvertPayloadToString());
-                if(name != null && checkHostName(name.roomid, matrixHostname))
+                if(name != null)
                 {
                     await client.JoinTrustedPrivateRoomAsync(name.roomid);
                     var n = await client.SetRoomNameAsync(name.roomid, name.name);
@@ -129,7 +115,7 @@ MqttClientOptions options;
             else if (e.ApplicationMessage.Topic == mqttTopicRoomAvatar)
             {
                 var avatar = JsonConvert.DeserializeObject<Avatar>(e.ApplicationMessage.ConvertPayloadToString());
-                if(avatar != null && checkHostName(avatar.roomid, matrixHostname))
+                if(avatar != null)
                 {
                     await client.JoinTrustedPrivateRoomAsync(avatar.roomid);
                     var a = await client.SetRoomAvatarAsync(avatar.roomid, avatar.url);
@@ -140,7 +126,7 @@ MqttClientOptions options;
             else if (e.ApplicationMessage.Topic == mqttTopicRoomMessage)
             {
                 var message = JsonConvert.DeserializeObject<Message>(e.ApplicationMessage.ConvertPayloadToString());
-                if(message != null && checkHostName(message.roomid, matrixHostname))
+                if(message != null)
                 {
                     await client.JoinTrustedPrivateRoomAsync(message.roomid);
                     var m = await client.SendMessageAsync(message.roomid, message.message);
