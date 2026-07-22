@@ -23,7 +23,16 @@ var matrixServer = Environment.GetEnvironmentVariable("MATRIXSERVER");
 var matrixusername = Environment.GetEnvironmentVariable("MATRIXUSERNAME");
 var matrixpassword = Environment.GetEnvironmentVariable("MATRIXPASSWORD");
 var matrixdeviceId = Environment.GetEnvironmentVariable("MATRIXDEVICEID") ?? "mqtt2matrixbot";
-var matrixHostname = matrixServer.Substring("https://".Length);
+
+// MATRIXSERVER muss eine gültige absolute URL sein, sonst crasht der spätere
+// new Uri(matrixServer) beim Start. Früh und mit klarer Meldung abbrechen.
+if (string.IsNullOrWhiteSpace(matrixServer)
+    || !Uri.TryCreate(matrixServer, UriKind.Absolute, out _))
+{
+    Console.WriteLine("MATRIXSERVER fehlt oder ist keine gültige absolute URL (z.B. https://matrix.example.org). Beende.");
+    Environment.Exit(1);
+    return;
+}
 
 
 var closeUrl = "mxc://matrix.c3re.de/YjVhJIHNrbEXmZmwAgplvNCs";
@@ -59,15 +68,28 @@ MqttClientOptions options;
     var matrixFactory = new MatrixClientFactory();
   
     var client = matrixFactory.Create();
-    var matrixNodeAddress = new System.Uri(matrixServer);
+    var matrixNodeAddress = new System.Uri(matrixServer!);
 
-    if (matrixusername != null && matrixpassword != null)
+    if (!string.IsNullOrWhiteSpace(matrixusername) && !string.IsNullOrWhiteSpace(matrixpassword))
     {
-        await client.LoginAsync(matrixNodeAddress, matrixusername, matrixpassword, matrixdeviceId);
+        try
+        {
+            await client.LoginAsync(matrixNodeAddress, matrixusername, matrixpassword, matrixdeviceId);
+            Console.WriteLine("Logged in to Matrix-Server successfully.");
+        }
+        catch (Exception ex)
+        {
+            // Ohne erfolgreichen Login kann die Bridge nichts ausrichten. Lieber hart
+            // beenden (Docker-Restart-Policy übernimmt den Retry) als still weiterlaufen
+            // und jede MQTT-Nachricht ins Leere fehlschlagen lassen.
+            Console.WriteLine($"Failed to log in to Matrix-Server: {ex.Message}. Beende.");
+            Environment.Exit(1);
+        }
     }
     else
     {
-        Console.WriteLine($"Failed to connect to Matrix-Server. No User or Password provided.");
+        Console.WriteLine("Failed to connect to Matrix-Server. No User or Password provided. Beende.");
+        Environment.Exit(1);
     }
 
 // connect to Matrix-Server
@@ -88,7 +110,8 @@ MqttClientOptions options;
 
     mqttClient.ApplicationMessageReceivedAsync += async e =>
     {
-        
+        try
+        {
             if (e.ApplicationMessage.Topic == mqttTopicRoomTopic)
             {
                 var topic = JsonConvert.DeserializeObject<Topic>(e.ApplicationMessage.ConvertPayloadToString());
@@ -137,42 +160,68 @@ MqttClientOptions options;
             {
                 Console.WriteLine("Unknown Topic");
             }
+        }
+        catch (Exception ex)
+        {
+            // Einzelne fehlerhafte Nachricht (kaputtes JSON, Matrix-API-Fehler) darf
+            // weder den Handler noch den Prozess killen.
+            Console.WriteLine($"Error while handling message on topic '{e.ApplicationMessage.Topic}': {ex.Message}");
+        }
     };
 
-    using (Task<MqttClientConnectResult> connectResult = mqttClient.ConnectAsync(options))
+    var mqttSubscribeOptions = mqttFactory.CreateSubscribeOptionsBuilder()
+        .WithTopicFilter(
+            f =>
+            {
+                f.WithTopic(mqttBaseTopic + "#");
+            })
+        .Build();
+
+    // Verbindet (mit Backoff-Retry, bis es klappt) und abonniert anschließend.
+    // Wird sowohl beim Start als auch nach einem Disconnect (Reconnect) aufgerufen.
+    async Task ConnectAndSubscribeAsync()
     {
-        connectResult.Wait();
-        
-       
-
-        var mqttSubscribeOptions = mqttFactory.CreateSubscribeOptionsBuilder()
-            .WithTopicFilter(
-                f =>
+        var delaySeconds = 2;
+        while (true)
+        {
+            try
+            {
+                var result = await mqttClient.ConnectAsync(options, CancellationToken.None);
+                if (result.ResultCode == MqttClientConnectResultCode.Success)
                 {
-                    f.WithTopic(mqttBaseTopic + "#");
-              
-                })
-            .Build();
+                    await mqttClient.SubscribeAsync(mqttSubscribeOptions, CancellationToken.None);
+                    Console.WriteLine("Connected to MQTT broker successfully.");
+                    return;
+                }
 
-        await mqttClient.SubscribeAsync(mqttSubscribeOptions, CancellationToken.None);
+                Console.WriteLine($"Failed to connect to MQTT broker. Result code: {result.ResultCode}. Retrying in {delaySeconds}s...");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"MQTT connection error: {ex.Message}. Retrying in {delaySeconds}s...");
+            }
 
-
-       
-        
-        
-        if (connectResult.Result.ResultCode == MqttClientConnectResultCode.Success)
-        {
-            Console.WriteLine("Connected to MQTT broker successfully.");
-            
-       
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+            delaySeconds = Math.Min(delaySeconds * 2, 30); // exponentielles Backoff, gedeckelt auf 30s
         }
-        else
-        {
-            Console.WriteLine($"Failed to connect to MQTT broker. Result code: {connectResult.Result.ResultCode}");
-        }
-
-
     }
+
+    // Laufzeit-Reconnect: bei Verbindungsverlust nach kurzer Pause neu verbinden + abonnieren.
+    mqttClient.DisconnectedAsync += async e =>
+    {
+        // Ein fehlgeschlagener ConnectAsync feuert dieses Event ebenfalls. Um diese Fälle
+        // kümmert sich bereits die Retry-Schleife in ConnectAndSubscribeAsync. Hier nur auf
+        // den Verlust einer zuvor bestehenden Verbindung reagieren – sonst startet jeder
+        // Fehlversuch eine weitere Reconnect-Schleife (Connect-Storm gegen den Broker).
+        if (!e.ClientWasConnected)
+            return;
+
+        Console.WriteLine($"MQTT disconnected: {e.Reason}. Reconnecting...");
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        await ConnectAndSubscribeAsync();
+    };
+
+    await ConnectAndSubscribeAsync();
 
 
     while (true)

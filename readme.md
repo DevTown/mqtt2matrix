@@ -69,3 +69,16 @@ MQTTPASSWORD -> MQTT Password
 MATRIXDEVICEID -> Devicename with the SDK connects to the Matrix-Server 
 
 ** -> Needed options
+
+## Running
+
+The bridge automatically reconnects to the MQTT broker if it is unreachable at
+startup or drops out during runtime, so a container restart is no longer required
+for MQTT outages. As an extra safety net, run the container with a restart policy:
+
+```bash
+docker run --restart=unless-stopped ... mqtt2matrix
+```
+
+`MQTTSERVER` must be a plain hostname or IP (e.g. `localhost`, `192.168.1.10`),
+not a URI with a `mqtt://` scheme.
